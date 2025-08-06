@@ -200,7 +200,6 @@
           - php-xmlrpc
           - php-gd
           - php-mysql
-          - php8.1
         state: present
         update_cache: yes
 

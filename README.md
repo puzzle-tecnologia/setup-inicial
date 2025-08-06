@@ -16,3 +16,220 @@
 ```bash
 ansible-playbook -v -K playbook.yml
 ```
+
+
+```yaml
+# playbook.yml
+--- 
+- name: Instalar Docker, Terraform, Git, VSCode, Python, sdkman e tfenv
+  hosts: localhost
+  become: yes
+  vars:
+    terraform_version: "1.8.5"
+    home_dir: "{{ lookup('env', 'HOME') }}"
+  tasks:
+    - name: Atualizar o cache dos repositórios
+      apt:
+        update_cache: yes
+
+    - name: Instalar dependências essenciais
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - unzip
+          - python3
+          - python3-pip
+          - openssl
+        state: present
+
+    # Docker
+    - name: Adicionar chave GPG oficial do Docker
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Adicionar repositório do Docker
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+        state: present
+
+    - name: Instalar Docker
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: Adicionar usuário atual ao grupo docker (sem sudo)
+      user:
+        name: "{{ lookup('env', 'USER') }}"
+        groups: docker
+        append: yes
+
+    - name: Exibir aviso sobre novo grupo docker
+      debug:
+        msg: |
+          O usuário {{ lookup('env', 'USER') }} foi adicionado ao grupo 'docker'.
+          Efetue logout e login novamente ou rode 'newgrp docker' para usar docker sem sudo.
+
+
+    - name: Habilitar serviço Docker
+      systemd:
+        name: docker
+        enabled: yes
+
+    - name: Iniciar serviço Docker
+      systemd:
+        name: docker
+        state: started
+
+    # Git
+    - name: Instalar Git
+      apt:
+        name: git
+        state: present
+
+    # Terraform (instalação manual)
+    - name: Baixar o pacote do Terraform
+      shell: |
+        wget -q https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip -O /tmp/terraform.zip
+        unzip -o /tmp/terraform.zip -d /usr/local/bin
+        chmod +x /usr/local/bin/terraform
+      args:
+        creates: /usr/local/bin/terraform
+
+    # VSCode
+    - name: Adicionar repositório do VSCode
+      apt_key:
+        url: https://packages.microsoft.com/keys/microsoft.asc
+        state: present
+
+    - name: Adicionar repositório do VSCode
+      apt_repository:
+        repo: deb [arch=amd64] https://packages.microsoft.com/repos/vscode stable main
+        state: present
+
+    - name: Instalar Visual Studio Code
+      apt:
+        name: code
+        state: present
+        update_cache: yes
+
+    # Python (já incluído acima)
+
+    # sdkman (instala para o usuário atual)
+    - name: Instalar sdkman
+      become: false
+      shell: |
+        curl -s "https://get.sdkman.io" | bash
+      args:
+        creates: "{{ home_dir }}/.sdkman"
+
+    # tfenv (instalação via git clone)
+    - name: Instalar tfenv
+      become: false
+      git:
+        repo: "https://github.com/tfutils/tfenv.git"
+        dest: "{{ home_dir }}/.tfenv"
+        version: master
+
+    - name: Adicionar tfenv ao PATH (opcional, depende do shell)
+      become: false
+      lineinfile:
+        path: "{{ home_dir }}/.bashrc"
+        line: 'export PATH="$HOME/.tfenv/bin:$PATH"'
+        insertafter: EOF
+        state: present
+      when: ansible_env.SHELL.endswith('bash')
+
+    # Instalar Terraform com tfenv (exemplo, não obrigatório)
+    - name: Instalar Terraform pelo tfenv (opcional)
+      become: false
+      shell: |
+        ~/.tfenv/bin/tfenv install {{ terraform_version }}
+        ~/.tfenv/bin/tfenv use {{ terraform_version }}
+      args:
+        creates: "{{ home_dir }}/.tfenv/versions/{{ terraform_version }}"
+        # Após instalar o Docker...
+    - name: Adicionar usuário ao grupo docker
+      user:
+        name: "{{ ansible_user_id | default(lookup('env', 'USER')) }}"
+        groups: docker
+        append: yes
+    # Instalar Docker Compose v2 (binário oficial)
+    - name: Baixar Docker Compose v2
+      get_url:
+        url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+        force: yes
+
+    - name: Garantir que o docker-compose é executável
+      file:
+        path: /usr/local/bin/docker-compose
+        mode: '0755'
+        state: file
+    
+    # Instalar NVM para o usuário atual
+    - name: Instalar NVM (Node Version Manager)
+      become: false
+      shell: |
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+      args:
+        creates: "{{ home_dir }}/.nvm"
+    # Instalar compilador C e dependências para compilar PHP
+    - name: Instalar compilador C e dependências de build do PHP
+      apt:
+        name:
+          - build-essential
+          - gcc
+          - make
+          - autoconf
+          - bison
+          - re2c
+          - libxml2-dev
+          - libsqlite3-dev
+          - libssl-dev
+          - libcurl4-openssl-dev
+          - libjpeg-dev
+          - libpng-dev
+          - libmcrypt-dev
+          - libreadline-dev
+          - libicu-dev
+          - libonig-dev
+          - libzip-dev
+          - libxslt1-dev
+          - pkg-config
+          - libbz2-dev
+          - libaspell-dev
+          - libedit-dev
+        state: present
+        update_cache: yes
+
+    # Instalar PHP via apt
+    - name: Instalar PHP e extensões básicas
+      apt:
+        name:
+          - php
+          - php-cli
+          - php-mbstring
+          - php-xml
+          - php-curl
+          - php-zip
+          - php-xmlrpc
+          - php-gd
+          - php-mysql
+        state: present
+        update_cache: yes
+
+    - name: AVISO IMPORTANTE - Atualização de grupo docker
+      debug:
+        msg: "O usuário {{ lookup('env', 'USER') }} foi adicionado ao grupo 'docker'. Para usar o docker sem sudo, é necessário fechar e abrir novamente o terminal (logout/login) OU Executar manualmente: newgrp docker"
+
+
+
+
+```
